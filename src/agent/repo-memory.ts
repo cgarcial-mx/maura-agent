@@ -13,6 +13,7 @@ import type {
   BetConfirmation,
   HealthGraphRepo,
   Pattern,
+  ScheduledMessage,
   UserProfile,
 } from './repo.js';
 
@@ -25,6 +26,8 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
   private signals: { pseudonym: string; signalType: string; value: string; source: string }[] = [];
   private cycleEvents: { pseudonym: string; eventType: string; eventDate: string; source: string }[] = [];
   private lessons: { pseudonym: string; lessonKey: string; betId: string }[] = [];
+  private phones = new Map<string, string>(); // pseudonym → whatsapp_phone
+  private scheduledMessages: ScheduledMessage[] = [];
 
   async createUser(input: {
     lifeStage?: string | null;
@@ -125,6 +128,7 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
       beliefPosterior: null,
       engineVersion: input.engineVersion,
       generator: input.generator,
+      reminderCount: 0,
     };
     this.bets.push(bet);
     return bet;
@@ -162,6 +166,45 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     if (!b) throw new Error(`bet not found: ${betId}`);
     b.result = result;
     b.beliefPosterior = posterior;
+  }
+
+  async listDueBets(today: string, maxReminders: number): Promise<Bet[]> {
+    return this.bets.filter(
+      (b) => b.predictedDate <= today && b.result === null && b.reminderCount < maxReminders,
+    );
+  }
+
+  async listLateBets(today: string): Promise<Bet[]> {
+    return this.bets.filter((b) => b.predictedDate < today && b.result === null);
+  }
+
+  async markReminderSent(betId: string): Promise<void> {
+    const b = this.bets.find((x) => x.id === betId);
+    if (!b) throw new Error(`bet not found: ${betId}`);
+    b.reminderCount += 1;
+  }
+
+  async getPhoneByPseudonym(pseudonym: string): Promise<string | null> {
+    return this.phones.get(pseudonym) ?? null;
+  }
+
+  async listDueScheduledMessages(now: Date): Promise<ScheduledMessage[]> {
+    return this.scheduledMessages.filter((m) => m.sendAt <= now && m.status === 'pending');
+  }
+
+  async markScheduledMessageSent(id: string): Promise<void> {
+    const m = this.scheduledMessages.find((x) => x.id === id);
+    if (!m) throw new Error(`scheduled message not found: ${id}`);
+    m.status = 'sent';
+  }
+
+  // ── helpers de test ─────────────────────────────────────────────────────
+  setPhone(pseudonym: string, phone: string): void {
+    this.phones.set(pseudonym, phone);
+  }
+
+  enqueueScheduledMessage(msg: ScheduledMessage): void {
+    this.scheduledMessages.push(msg);
   }
 
   async logSignal(input: {

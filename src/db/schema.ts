@@ -97,6 +97,9 @@ export const bets = pgTable(
     beliefPosterior: numeric('belief_posterior'),
     engineVersion: text('engine_version').notNull(),
     generator: text('generator').notNull(), // 'llm' | 'manual' | 'motor'
+    // Estado de entrega del timbre de confirmación (no es contenido de lectura).
+    reminderCount: integer('reminder_count').notNull().default(0),
+    reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

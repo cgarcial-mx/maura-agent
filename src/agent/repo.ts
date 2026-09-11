@@ -53,6 +53,7 @@ export interface Bet {
   beliefPosterior: number | null;
   engineVersion: string;
   generator: Generator;
+  reminderCount: number;
 }
 
 export interface BetConfirmation {
@@ -60,6 +61,15 @@ export interface BetConfirmation {
   betId: string;
   result: BetResult;
   corrected: boolean;
+}
+
+export interface ScheduledMessage {
+  id: string;
+  pseudonym: string;
+  kind: 'check_in' | 'follow_up';
+  payload: unknown;
+  sendAt: Date;
+  status: 'pending' | 'sent' | 'cancelled';
 }
 
 export interface HealthGraphRepo {
@@ -111,6 +121,14 @@ export interface HealthGraphRepo {
     source: string;
   }): Promise<void>;
   updateBetResult(betId: string, result: BetResult, posterior: number): Promise<void>;
+
+  // Scheduler / sweeper (PRD §13.2)
+  listDueBets(today: string, maxReminders: number): Promise<Bet[]>;
+  listLateBets(today: string): Promise<Bet[]>;
+  markReminderSent(betId: string): Promise<void>;
+  getPhoneByPseudonym(pseudonym: string): Promise<string | null>;
+  listDueScheduledMessages(now: Date): Promise<ScheduledMessage[]>;
+  markScheduledMessageSent(id: string): Promise<void>;
 
   // Señales / ciclo / lecciones
   logSignal(input: {

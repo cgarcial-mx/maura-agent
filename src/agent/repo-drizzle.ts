@@ -5,7 +5,7 @@
  * Solo `result`/`beliefPosterior`/`confirmed_at` se actualizan en un bet (vía la
  * confirmación); los campos de lectura jamás se tocan.
  */
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lte, lt, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema.js';
 import type { WindowSpec } from '../domain/window-spec.js';
@@ -16,7 +16,14 @@ import type {
   PatternStatus,
   SignalType,
 } from '../domain/vocabulary.js';
-import type { Bet, BetConfirmation, HealthGraphRepo, Pattern, UserProfile } from './repo.js';
+import type {
+  Bet,
+  BetConfirmation,
+  HealthGraphRepo,
+  Pattern,
+  ScheduledMessage,
+  UserProfile,
+} from './repo.js';
 
 type DB = NodePgDatabase<typeof schema>;
 type PatternRow = typeof schema.patterns.$inferSelect;
@@ -209,6 +216,74 @@ export class DrizzleHealthGraphRepo implements HealthGraphRepo {
       .where(eq(schema.bets.id, betId));
   }
 
+  async listDueBets(today: string, maxReminders: number): Promise<Bet[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.bets)
+      .where(
+        and(
+          lte(schema.bets.predictedDate, today),
+          isNull(schema.bets.result),
+          lt(schema.bets.reminderCount, maxReminders),
+        ),
+      );
+    return rows.map((r) => this.toBet(r));
+  }
+
+  async listLateBets(today: string): Promise<Bet[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.bets)
+      .where(and(lt(schema.bets.predictedDate, today), isNull(schema.bets.result)));
+    return rows.map((r) => this.toBet(r));
+  }
+
+  async markReminderSent(betId: string): Promise<void> {
+    await this.db
+      .update(schema.bets)
+      .set({
+        reminderCount: sql`${schema.bets.reminderCount} + 1`,
+        reminderSentAt: new Date(),
+      })
+      .where(eq(schema.bets.id, betId));
+  }
+
+  async getPhoneByPseudonym(pseudonym: string): Promise<string | null> {
+    const rows = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.pseudonym, pseudonym))
+      .limit(1);
+    return rows[0]?.whatsappPhone ?? null;
+  }
+
+  async listDueScheduledMessages(now: Date): Promise<ScheduledMessage[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.scheduledMessages)
+      .where(
+        and(
+          lte(schema.scheduledMessages.sendAt, now),
+          eq(schema.scheduledMessages.status, 'pending'),
+        ),
+      );
+    return rows.map((r) => ({
+      id: r.id,
+      pseudonym: r.pseudonym,
+      kind: r.kind as ScheduledMessage['kind'],
+      payload: r.payload,
+      sendAt: r.sendAt,
+      status: r.status as ScheduledMessage['status'],
+    }));
+  }
+
+  async markScheduledMessageSent(id: string): Promise<void> {
+    await this.db
+      .update(schema.scheduledMessages)
+      .set({ status: 'sent' })
+      .where(eq(schema.scheduledMessages.id, id));
+  }
+
   async logSignal(input: {
     pseudonym: string;
     signalType: SignalType;
@@ -292,6 +367,7 @@ export class DrizzleHealthGraphRepo implements HealthGraphRepo {
       beliefPosterior: row.beliefPosterior === null ? null : Number(row.beliefPosterior),
       engineVersion: row.engineVersion,
       generator: row.generator as Generator,
+      reminderCount: Number(row.reminderCount),
     };
   }
 }
