@@ -190,6 +190,7 @@ export interface HealthGraphRepo {
     value: string;
     source: string;
   }): Promise<void>;
+  listRecentSignals(pseudonym: string, limit: number): Promise<Signal[]>;
   logCycleEvent(input: {
     pseudonym: string;
     eventType: EventType;

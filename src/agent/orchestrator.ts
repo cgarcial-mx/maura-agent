@@ -5,7 +5,7 @@
  * del LLM o lectura no falsable, responde "sigo observando" (nunca degrada a genérico).
  */
 import { proposeReadingFailClosed } from '../llm/client.js';
-import type { LLMProvider } from '../llm/provider.js';
+import type { AgentContext, LLMProvider } from '../llm/provider.js';
 import type { Bet, HealthGraphRepo } from './repo.js';
 import { proposeReading } from './tools.js';
 
@@ -24,11 +24,26 @@ export async function generateReading(
   repo: HealthGraphRepo,
   provider: LLMProvider,
   pseudonym: string,
-  opts: { today?: Date; context?: unknown } = {},
+  opts: { today?: Date } = {},
 ): Promise<GenerateReadingResult> {
-  const cycleAnchor = await repo.getLastPeriodStart(pseudonym);
+  const [profile, cycleAnchor, recentSignals] = await Promise.all([
+    repo.getUserProfile(pseudonym),
+    repo.getLastPeriodStart(pseudonym),
+    repo.listRecentSignals(pseudonym, 10),
+  ]);
 
-  const llm = await proposeReadingFailClosed(provider, opts.context);
+  // Contexto minimizado y pseudonimizado (nunca identidad).
+  const context: AgentContext = {
+    lifeStage: profile?.lifeStage ?? null,
+    cycleAnchor: cycleAnchor ? cycleAnchor.toISOString().slice(0, 10) : null,
+    recentSignals: recentSignals.map((s) => ({
+      signalType: s.signalType,
+      value: s.value,
+      recordedAt: s.recordedAt,
+    })),
+  };
+
+  const llm = await proposeReadingFailClosed(provider, context);
   if (llm.proposal.kind === 'observe') {
     return {
       reading: null,

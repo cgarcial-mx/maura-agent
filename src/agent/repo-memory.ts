@@ -309,6 +309,10 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     });
   }
 
+  async listRecentSignals(pseudonym: string, limit: number): Promise<Signal[]> {
+    return this.signals.filter((s) => s.pseudonym === pseudonym).slice(-limit).reverse();
+  }
+
   async logCycleEvent(input: {
     pseudonym: string;
     eventType: string;

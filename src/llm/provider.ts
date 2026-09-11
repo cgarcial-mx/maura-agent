@@ -22,13 +22,20 @@ export type ReadingProposal =
   | { kind: 'reading'; reading: ProposedReading }
   | { kind: 'observe' }; // "sigo observando": no hay señal suficiente
 
+/** Contexto minimizado y pseudonimizado que recibe el LLM (nunca identidad). */
+export interface AgentContext {
+  lifeStage: string | null;
+  cycleAnchor: string | null; // 'YYYY-MM-DD' del último inicio de periodo
+  recentSignals: { signalType: string; value: string | null; recordedAt: string }[];
+}
+
 export interface LLMProvider {
   readonly name: string;
   /**
    * Dado el contexto (señales/historial minimizado y pseudonimizado), propone una
    * lectura o se abstiene. Nunca recibe identidad (`users.id`, teléfono, email).
    */
-  proposeReading(context: unknown): Promise<ReadingProposal>;
+  proposeReading(context: AgentContext): Promise<ReadingProposal>;
 }
 
 /** Forma reexportada para conveniencia del tool-calling (no la usa la DB). */

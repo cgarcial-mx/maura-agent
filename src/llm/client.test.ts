@@ -48,6 +48,7 @@ describe('LLM client fail-closed', () => {
   it('reintenta una vez y recupera', async () => {
     const r = await proposeReadingFailClosed(
       new FlakyLLMProvider(1, { kind: 'reading', reading }),
+      undefined,
       { retries: 1 },
     );
     expect(r.fellBack).toBe(false);
@@ -55,7 +56,7 @@ describe('LLM client fail-closed', () => {
   });
 
   it('no reintenta indefinidamente', async () => {
-    const r = await proposeReadingFailClosed(new FailingLLMProvider(), { retries: 2 });
+    const r = await proposeReadingFailClosed(new FailingLLMProvider(), undefined, { retries: 2 });
     expect(r.fellBack).toBe(true);
     expect(r.reason).toBe('error');
   });

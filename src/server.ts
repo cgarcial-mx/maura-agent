@@ -3,15 +3,27 @@ import { buildServer } from './app.js';
 import { WhatsAppChannel } from './channel/whatsapp.js';
 import { config } from './config.js';
 import { createDb } from './db/index.js';
+import { DeepSeekProvider } from './llm/deepseek.js';
 import { FakeLLMProvider } from './llm/fake.js';
+import type { LLMProvider } from './llm/provider.js';
 import { startScheduler } from './scheduler.js';
+
+function createProvider(): LLMProvider {
+  if (config.llm.apiKey) {
+    return new DeepSeekProvider({
+      apiKey: config.llm.apiKey,
+      model: config.llm.model || undefined,
+      baseUrl: config.llm.baseUrl || undefined,
+    });
+  }
+  // Sin API key → fail-closed "sigo observando" (seguro para arrancar).
+  return new FakeLLMProvider({ kind: 'observe' });
+}
 
 async function main() {
   const db = createDb();
   const repo = new DrizzleHealthGraphRepo(db);
-  // Proveedor real se elige después (§18.7). El cliente fail-closed ya garantiza que
-  // un proveedor "observe" sea seguro para arrancar (nunca emite lectura genérica).
-  const provider = new FakeLLMProvider({ kind: 'observe' });
+  const provider = createProvider();
   const channel = new WhatsAppChannel();
 
   const app = await buildServer({

@@ -9,7 +9,7 @@
  * nunca se cuelga.
  */
 import { config } from '../config.js';
-import type { LLMProvider, ReadingProposal } from './provider.js';
+import type { AgentContext, LLMProvider, ReadingProposal } from './provider.js';
 
 export type FailReason = 'timeout' | 'error' | 'malformed';
 
@@ -78,7 +78,11 @@ export interface FailClosedOptions {
 
 export async function proposeReadingFailClosed(
   provider: LLMProvider,
-  context: unknown = undefined,
+  context: AgentContext = {
+    lifeStage: null,
+    cycleAnchor: null,
+    recentSignals: [],
+  },
   opts: FailClosedOptions = {},
 ): Promise<ProposeResult> {
   const timeoutMs = opts.timeoutMs ?? config.llm.timeoutMs;

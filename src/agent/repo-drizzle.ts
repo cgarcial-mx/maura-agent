@@ -24,6 +24,7 @@ import type {
   IdentifiableUser,
   Pattern,
   ScheduledMessage,
+  Signal,
   UserProfile,
 } from './repo.js';
 
@@ -429,6 +430,23 @@ export class DrizzleHealthGraphRepo implements HealthGraphRepo {
       value: input.value,
       source: input.source,
     });
+  }
+
+  async listRecentSignals(pseudonym: string, limit: number): Promise<Signal[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.signals)
+      .where(eq(schema.signals.pseudonym, pseudonym))
+      .orderBy(desc(schema.signals.recordedAt))
+      .limit(limit);
+    return rows.map((s) => ({
+      id: s.id,
+      pseudonym: s.pseudonym,
+      signalType: s.signalType,
+      value: s.value,
+      source: s.source,
+      recordedAt: s.recordedAt.toISOString(),
+    }));
   }
 
   async logCycleEvent(input: {

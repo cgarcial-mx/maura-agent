@@ -7,6 +7,7 @@ export const config = {
     timeoutMs: Number(process.env.LLM_TIMEOUT_MS ?? 8000),
     model: process.env.LLM_MODEL ?? '',
     apiKey: process.env.LLM_API_KEY ?? '',
+    baseUrl: process.env.LLM_BASE_URL ?? '',
   },
   whatsapp: {
     token: process.env.WHATSAPP_TOKEN ?? '',
