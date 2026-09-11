@@ -9,6 +9,8 @@ import { confirmReading, logSymptom, ToolError } from './agent/tools.js';
 import type { Channel } from './channel/channel.js';
 import { parseConfirmationButtonId } from './channel/whatsapp.js';
 import type { LLMProvider } from './llm/provider.js';
+import { renderPortabilityPage } from './portability/page.js';
+import { issueToken, verifyToken } from './portability/token.js';
 
 export interface BuildServerOptions {
   repo: HealthGraphRepo;
@@ -17,6 +19,10 @@ export interface BuildServerOptions {
   whatsapp?: {
     verifyToken: string;
     channel: Channel;
+  };
+  portability?: {
+    secret: string;
+    publicUrl?: string;
   };
 }
 
@@ -58,7 +64,10 @@ function parseWhatsAppMessages(body: unknown): IncomingWhatsAppMessage[] {
 }
 
 export async function buildServer(opts: BuildServerOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false });
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    routerOptions: { maxParamLength: 256 },
+  });
   const { repo, provider } = opts;
 
   app.get('/health', async () => ({ status: 'ok' }));
@@ -163,6 +172,53 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
         // Mensajes de texto: la conversación se conecta en Fase 2.
       }
       return { status: 'received' };
+    });
+  }
+
+  // Portabilidad / borrado self-service (AC12, AC7, §9.6).
+  if (opts.portability) {
+    const { secret, publicUrl } = opts.portability;
+
+    // Genera el enlace (el agente lo envía por canal cuando la usuaria lo pide).
+    app.post('/users/:userId/portabilidad', async (req, reply) => {
+      const { userId } = req.params as { userId: string };
+      const user = await repo.getUserById(userId);
+      if (!user) return reply.code(404).send({ error: 'user_not_found' });
+      const token = issueToken(userId, secret);
+      const base = publicUrl || `http://${req.headers.host ?? 'localhost'}`;
+      return { url: `${base}/portabilidad/${token}` };
+    });
+
+    app.get('/portabilidad/:token', async (req, reply) => {
+      const { token } = req.params as { token: string };
+      const verified = verifyToken(token, secret);
+      if (!verified) return reply.code(403).type('text/plain').send('Enlace inválido o expirado');
+      return reply.type('text/html').send(renderPortabilityPage(token));
+    });
+
+    app.post('/portabilidad/:token/exportar', async (req, reply) => {
+      const { token } = req.params as { token: string };
+      const verified = verifyToken(token, secret);
+      if (!verified) return reply.code(403).send({ error: 'invalid_token' });
+      const user = await repo.getUserById(verified.userId);
+      if (!user) return reply.code(404).send({ error: 'user_not_found' });
+      const data = await repo.exportUserData(user.pseudonym);
+      return reply
+        .header('content-disposition', 'attachment; filename="maura-datos.json"')
+        .send(data);
+    });
+
+    app.post('/portabilidad/:token/borrar', async (req, reply) => {
+      const { token } = req.params as { token: string };
+      const verified = verifyToken(token, secret);
+      if (!verified) return reply.code(403).send({ error: 'invalid_token' });
+      const user = await repo.getUserById(verified.userId);
+      if (!user) return reply.code(404).send({ error: 'user_not_found' });
+      await repo.softDeleteUser(verified.userId);
+      return {
+        message:
+          'Cuenta marcada para borrado. Conservaremos solo agregados anónimos; el borrado definitivo ocurre tras 30 días.',
+      };
     });
   }
 

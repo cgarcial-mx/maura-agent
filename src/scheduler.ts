@@ -4,6 +4,7 @@
  * silenciosos); un monitor externo puede engancharse al log.
  */
 import type { HealthGraphRepo } from './agent/repo.js';
+import { hardDeleteExpired } from './agent/retention.js';
 import { sweepConfirmations } from './agent/sweeper.js';
 import type { Channel } from './channel/channel.js';
 
@@ -31,6 +32,11 @@ export function startScheduler(opts: SchedulerOptions): () => void {
         logger.info(
           `[sweeper] recordatorios=${result.remindersSent} proactivos=${result.scheduledSent}`,
         );
+      }
+
+      const deleted = await hardDeleteExpired(opts.repo);
+      if (deleted > 0) {
+        logger.info(`[retention] ${deleted} cuenta(s) con borrado duro tras gracia`);
       }
     } catch (err) {
       logger.error('[sweeper] error en la pasada', err);

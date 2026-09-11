@@ -37,6 +37,7 @@ export async function sweepConfirmations(
   const due = await repo.listDueBets(todayStr, MAX_REMINDERS);
   let remindersSent = 0;
   for (const bet of due) {
+    if (!bet.pseudonym) continue; // borrado duro ya rompió el enlace
     const phone = await repo.getPhoneByPseudonym(bet.pseudonym);
     if (!phone) continue; // sin canal resuelto: no hay a dónde enviar
     const sent = await channel.sendConfirmationPrompt(phone, buildConfirmationPrompt(bet));

@@ -13,4 +13,8 @@ export const config = {
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '',
   },
+  portability: {
+    secret: process.env.PORTABILITY_SECRET ?? '',
+    publicUrl: process.env.PUBLIC_URL ?? '',
+  },
 } as const;

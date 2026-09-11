@@ -71,4 +71,26 @@ describe.skipIf(!url)('DrizzleHealthGraphRepo (Postgres)', () => {
     // Tras confirmar, ya no hay bet pendiente.
     expect(await repo.getPendingBet(pseudonym)).toBeNull();
   });
+
+  it('borrado duro: rompe el enlace y conserva el agregado anónimo', async () => {
+    const user = await repo.createUser({});
+    const proposed = await proposeReading(repo, user.pseudonym, validInput, { today });
+    if (!proposed.ok) throw new Error('expected ok');
+    const betId = proposed.bet.id;
+    await confirmReading(repo, { betId, result: 'yes' });
+
+    await repo.hardDeleteUser(user.pseudonym);
+
+    // Identidad borrada, agregado conservado anónimo.
+    expect(await repo.getUserById(user.id)).toBeNull();
+    const bet = await repo.getBet(betId);
+    expect(bet).not.toBeNull();
+    expect(bet?.pseudonym).toBeNull();
+    expect(bet?.patternId).toBeNull();
+    expect(bet?.result).toBe('yes');
+
+    // Limpieza del agregado anónimo de prueba.
+    await db.delete(schema.betConfirmations).where(eq(schema.betConfirmations.betId, betId));
+    await db.delete(schema.bets).where(eq(schema.bets.id, betId));
+  });
 });

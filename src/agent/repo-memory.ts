@@ -11,9 +11,14 @@ import type { BetResult } from '../domain/vocabulary.js';
 import type {
   Bet,
   BetConfirmation,
+  CycleEvent,
+  ExportPayload,
   HealthGraphRepo,
+  IdentifiableUser,
+  MemoryEntry,
   Pattern,
   ScheduledMessage,
+  Signal,
   UserProfile,
 } from './repo.js';
 
@@ -23,11 +28,14 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
   private patterns: Pattern[] = [];
   private bets: Bet[] = [];
   private confirmations: BetConfirmation[] = [];
-  private signals: { pseudonym: string; signalType: string; value: string; source: string }[] = [];
-  private cycleEvents: { pseudonym: string; eventType: string; eventDate: string; source: string }[] = [];
+  private signals: Signal[] = [];
+  private cycleEvents: CycleEvent[] = [];
+  private memoryEntries: MemoryEntry[] = [];
   private lessons: { pseudonym: string; lessonKey: string; betId: string }[] = [];
   private phones = new Map<string, string>(); // pseudonym → whatsapp_phone
   private scheduledMessages: ScheduledMessage[] = [];
+  private deletedAt = new Map<string, Date>(); // pseudonym → deleted_at
+  private memoryEntryOwners = new Map<string, string>(); // memory entry id → pseudonym
 
   async createUser(input: {
     lifeStage?: string | null;
@@ -50,6 +58,84 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
 
   async getUserProfile(pseudonym: string): Promise<UserProfile | null> {
     return this.users.get(pseudonym) ?? null;
+  }
+
+  async getUserById(userId: string): Promise<IdentifiableUser | null> {
+    const pseudonym = this.userIds.get(userId);
+    if (!pseudonym) return null;
+    const profile = this.users.get(pseudonym);
+    if (!profile) return null;
+    return {
+      id: userId,
+      pseudonym,
+      whatsappPhone: this.phones.get(pseudonym) ?? null,
+      lifeStage: profile.lifeStage,
+      hasDiagnosis: profile.hasDiagnosis,
+      deletedAt: this.deletedAt.get(pseudonym) ?? null,
+    };
+  }
+
+  async exportUserData(pseudonym: string): Promise<ExportPayload> {
+    const profile = this.users.get(pseudonym);
+    const betIds = new Set(this.bets.filter((b) => b.pseudonym === pseudonym).map((b) => b.id));
+    return {
+      exportedAt: new Date().toISOString(),
+      profile: {
+        lifeStage: profile?.lifeStage ?? null,
+        hasDiagnosis: profile?.hasDiagnosis ?? false,
+      },
+      signals: this.signals.filter((s) => s.pseudonym === pseudonym),
+      cycleEvents: this.cycleEvents.filter((e) => e.pseudonym === pseudonym),
+      memoryEntries: this.memoryEntries.filter((m) => this.memoryEntryOwners.get(m.id) === pseudonym),
+      patterns: this.patterns.filter((p) => p.pseudonym === pseudonym),
+      bets: this.bets.filter((b) => b.pseudonym === pseudonym),
+      confirmations: this.confirmations.filter((c) => betIds.has(c.betId)),
+      lessons: this.lessons
+        .filter((l) => l.pseudonym === pseudonym)
+        .map((l) => ({ lessonKey: l.lessonKey, betId: l.betId })),
+    };
+  }
+
+  async softDeleteUser(userId: string): Promise<void> {
+    const pseudonym = this.userIds.get(userId);
+    if (!pseudonym) return;
+    this.deletedAt.set(pseudonym, new Date());
+  }
+
+  async hardDeleteUser(pseudonym: string): Promise<void> {
+    // Romper el enlace en bets (conserva el agregado anónimo) + soltar patterns.
+    for (const b of this.bets) {
+      if (b.pseudonym === pseudonym) {
+        b.pseudonym = null;
+        b.patternId = null;
+      }
+    }
+    // Borrar datos personales.
+    this.patterns = this.patterns.filter((p) => p.pseudonym !== pseudonym);
+    this.signals = this.signals.filter((s) => s.pseudonym !== pseudonym);
+    this.cycleEvents = this.cycleEvents.filter((e) => e.pseudonym !== pseudonym);
+    this.lessons = this.lessons.filter((l) => l.pseudonym !== pseudonym);
+    this.scheduledMessages = this.scheduledMessages.filter((m) => m.pseudonym !== pseudonym);
+    for (const [entryId, owner] of [...this.memoryEntryOwners.entries()]) {
+      if (owner === pseudonym) {
+        this.memoryEntries = this.memoryEntries.filter((m) => m.id !== entryId);
+        this.memoryEntryOwners.delete(entryId);
+      }
+    }
+    this.users.delete(pseudonym);
+    this.phones.delete(pseudonym);
+    this.deletedAt.delete(pseudonym);
+    for (const [id, pseudo] of [...this.userIds.entries()]) {
+      if (pseudo === pseudonym) this.userIds.delete(id);
+    }
+  }
+
+  async listUsersPastGrace(cutoff: Date): Promise<string[]> {
+    const out: string[] = [];
+    for (const [pseudonym, deleted] of this.deletedAt.entries()) {
+      if (deleted <= cutoff) out.push(pseudonym);
+    }
+    return out;
   }
 
   async findPattern(
@@ -213,7 +299,14 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     value: string;
     source: string;
   }): Promise<void> {
-    this.signals.push({ ...input });
+    this.signals.push({
+      id: randomUUID(),
+      pseudonym: input.pseudonym,
+      signalType: input.signalType,
+      value: input.value,
+      source: input.source,
+      recordedAt: new Date().toISOString(),
+    });
   }
 
   async logCycleEvent(input: {
@@ -222,7 +315,13 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     eventDate: string;
     source: string;
   }): Promise<void> {
-    this.cycleEvents.push({ ...input });
+    this.cycleEvents.push({
+      id: randomUUID(),
+      pseudonym: input.pseudonym,
+      eventType: input.eventType,
+      eventDate: input.eventDate,
+      source: input.source,
+    });
   }
 
   async getLastPeriodStart(pseudonym: string): Promise<Date | null> {

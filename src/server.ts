@@ -1,6 +1,7 @@
 import { DrizzleHealthGraphRepo } from './agent/repo-drizzle.js';
 import { buildServer } from './app.js';
 import { WhatsAppChannel } from './channel/whatsapp.js';
+import { config } from './config.js';
 import { createDb } from './db/index.js';
 import { FakeLLMProvider } from './llm/fake.js';
 import { startScheduler } from './scheduler.js';
@@ -18,6 +19,10 @@ async function main() {
     provider,
     logger: true,
     whatsapp: { verifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? '', channel },
+    portability: {
+      secret: config.portability.secret,
+      publicUrl: config.portability.publicUrl || undefined,
+    },
   });
 
   // Cron simple (PRD §13.2): deriva confirmaciones de bets + proactivos.

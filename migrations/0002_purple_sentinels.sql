@@ -1,0 +1,1 @@
+ALTER TABLE "bets" ALTER COLUMN "pseudonym" DROP NOT NULL;

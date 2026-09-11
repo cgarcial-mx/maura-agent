@@ -84,7 +84,9 @@ export const bets = pgTable(
   'bets',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    pseudonym: uuid('pseudonym').notNull(),
+    // Nullable: en el borrado duro se "rompe el enlace" (pseudonym → NULL) para
+    // conservar el agregado anónimo (PRD §9.6). Al insertar siempre va no-nulo.
+    pseudonym: uuid('pseudonym'),
     patternId: uuid('pattern_id').references(() => patterns.id),
     readingText: text('reading_text').notNull(), // string humano (redacción del LLM)
     variable: text('variable').notNull(),

@@ -5,7 +5,7 @@
  * Solo `result`/`beliefPosterior`/`confirmed_at` se actualizan en un bet (vía la
  * confirmación); los campos de lectura jamás se tocan.
  */
-import { and, desc, eq, isNull, lte, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lte, lt, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema.js';
 import type { WindowSpec } from '../domain/window-spec.js';
@@ -19,7 +19,9 @@ import type {
 import type {
   Bet,
   BetConfirmation,
+  ExportPayload,
   HealthGraphRepo,
+  IdentifiableUser,
   Pattern,
   ScheduledMessage,
   UserProfile,
@@ -75,6 +77,137 @@ export class DrizzleHealthGraphRepo implements HealthGraphRepo {
       lifeStage: user.lifeStage,
       hasDiagnosis: user.hasDiagnosis ?? false,
     };
+  }
+
+  async getUserById(userId: string): Promise<IdentifiableUser | null> {
+    const rows = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    const u = rows[0];
+    if (!u) return null;
+    return {
+      id: u.id,
+      pseudonym: u.pseudonym,
+      whatsappPhone: u.whatsappPhone,
+      lifeStage: u.lifeStage,
+      hasDiagnosis: u.hasDiagnosis ?? false,
+      deletedAt: u.deletedAt,
+    };
+  }
+
+  async exportUserData(pseudonym: string): Promise<ExportPayload> {
+    const [profileRows, signals, cycleEvents, memoryEntries, patterns, bets, lessons] =
+      await Promise.all([
+        this.db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.pseudonym, pseudonym))
+          .limit(1),
+        this.db.select().from(schema.signals).where(eq(schema.signals.pseudonym, pseudonym)),
+        this.db
+          .select()
+          .from(schema.cycleEvents)
+          .where(eq(schema.cycleEvents.pseudonym, pseudonym)),
+        this.db
+          .select()
+          .from(schema.memoryEntries)
+          .where(eq(schema.memoryEntries.pseudonym, pseudonym)),
+        this.db.select().from(schema.patterns).where(eq(schema.patterns.pseudonym, pseudonym)),
+        this.db.select().from(schema.bets).where(eq(schema.bets.pseudonym, pseudonym)),
+        this.db
+          .select()
+          .from(schema.lessonsDelivered)
+          .where(eq(schema.lessonsDelivered.pseudonym, pseudonym)),
+      ]);
+
+    const betIds = bets.map((b) => b.id);
+    const confirmations =
+      betIds.length === 0
+        ? []
+        : await this.db
+            .select()
+            .from(schema.betConfirmations)
+            .where(inArray(schema.betConfirmations.betId, betIds));
+
+    return {
+      exportedAt: new Date().toISOString(),
+      profile: {
+        lifeStage: profileRows[0]?.lifeStage ?? null,
+        hasDiagnosis: profileRows[0]?.hasDiagnosis ?? false,
+      },
+      signals: signals.map((s) => ({
+        id: s.id,
+        pseudonym: s.pseudonym,
+        signalType: s.signalType,
+        value: s.value,
+        source: s.source,
+        recordedAt: s.recordedAt.toISOString(),
+      })),
+      cycleEvents: cycleEvents.map((e) => ({
+        id: e.id,
+        pseudonym: e.pseudonym,
+        eventType: e.eventType,
+        eventDate: e.eventDate,
+        source: e.source,
+      })),
+      memoryEntries: memoryEntries.map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        content: m.content,
+        status: m.status,
+      })),
+      patterns: patterns.map((p) => this.toPattern(p)),
+      bets: bets.map((b) => this.toBet(b)),
+      confirmations: confirmations.map((c) => ({
+        id: c.id,
+        betId: c.betId,
+        result: c.result as BetResult,
+        corrected: c.corrected,
+      })),
+      lessons: lessons.map((l) => ({ lessonKey: l.lessonKey, betId: l.betId })),
+    };
+  }
+
+  async softDeleteUser(userId: string): Promise<void> {
+    await this.db
+      .update(schema.users)
+      .set({ deletedAt: new Date() })
+      .where(eq(schema.users.id, userId));
+  }
+
+  async hardDeleteUser(pseudonym: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      // 1. Romper el enlace en bets (conserva el agregado anónimo) y soltar el pattern.
+      await tx
+        .update(schema.bets)
+        .set({ pseudonym: null, patternId: null })
+        .where(eq(schema.bets.pseudonym, pseudonym));
+      // 2. Borrar datos personales (patrones, proactivos, lecciones, memoria, señales, ciclo).
+      await tx.delete(schema.patterns).where(eq(schema.patterns.pseudonym, pseudonym));
+      await tx
+        .delete(schema.scheduledMessages)
+        .where(eq(schema.scheduledMessages.pseudonym, pseudonym));
+      await tx
+        .delete(schema.lessonsDelivered)
+        .where(eq(schema.lessonsDelivered.pseudonym, pseudonym));
+      await tx
+        .delete(schema.memoryEntries)
+        .where(eq(schema.memoryEntries.pseudonym, pseudonym));
+      await tx.delete(schema.signals).where(eq(schema.signals.pseudonym, pseudonym));
+      await tx.delete(schema.cycleEvents).where(eq(schema.cycleEvents.pseudonym, pseudonym));
+      // 3. Borrar la identidad.
+      await tx.delete(schema.users).where(eq(schema.users.pseudonym, pseudonym));
+    });
+  }
+
+  async listUsersPastGrace(cutoff: Date): Promise<string[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.users)
+      .where(lt(schema.users.deletedAt, cutoff));
+    return rows.map((u) => u.pseudonym);
   }
 
   async findPattern(

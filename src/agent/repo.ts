@@ -41,7 +41,8 @@ export interface Pattern {
 
 export interface Bet {
   id: string;
-  pseudonym: string;
+  /** null tras el borrado duro (se rompe el enlace para conservar el agregado anónimo). */
+  pseudonym: string | null;
   patternId: string | null;
   readingText: string;
   variable: SignalType;
@@ -72,6 +73,51 @@ export interface ScheduledMessage {
   status: 'pending' | 'sent' | 'cancelled';
 }
 
+export interface IdentifiableUser {
+  id: string;
+  pseudonym: string;
+  whatsappPhone: string | null;
+  lifeStage: string | null;
+  hasDiagnosis: boolean;
+  deletedAt: Date | null;
+}
+
+export interface Signal {
+  id: string;
+  pseudonym: string;
+  signalType: string;
+  value: string | null;
+  source: string;
+  recordedAt: string;
+}
+
+export interface CycleEvent {
+  id: string;
+  pseudonym: string;
+  eventType: string;
+  eventDate: string;
+  source: string;
+}
+
+export interface MemoryEntry {
+  id: string;
+  kind: string;
+  content: string;
+  status: string;
+}
+
+export interface ExportPayload {
+  exportedAt: string;
+  profile: { lifeStage: string | null; hasDiagnosis: boolean };
+  signals: Signal[];
+  cycleEvents: CycleEvent[];
+  memoryEntries: MemoryEntry[];
+  patterns: Pattern[];
+  bets: Bet[];
+  confirmations: BetConfirmation[];
+  lessons: { lessonKey: string; betId: string | null }[];
+}
+
 export interface HealthGraphRepo {
   // Capa identificable
   createUser(input: {
@@ -80,6 +126,13 @@ export interface HealthGraphRepo {
   }): Promise<{ id: string; pseudonym: string }>;
   getPseudonymByUserId(userId: string): Promise<string | null>;
   getUserProfile(pseudonym: string): Promise<UserProfile | null>;
+  getUserById(userId: string): Promise<IdentifiableUser | null>;
+
+  // Portabilidad / borrado (AC7, AC12, §9.6)
+  exportUserData(pseudonym: string): Promise<ExportPayload>;
+  softDeleteUser(userId: string): Promise<void>;
+  hardDeleteUser(pseudonym: string): Promise<void>;
+  listUsersPastGrace(cutoff: Date): Promise<string[]>;
 
   // Patrones
   findPattern(

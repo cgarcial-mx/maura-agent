@@ -15,6 +15,13 @@
       "when": 1789159903112,
       "tag": "0001_strange_midnight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789160540757,
+      "tag": "0002_purple_sentinels",
+      "breakpoints": true
     }
   ]
 }
