@@ -17,7 +17,8 @@ import type {
 } from './repo.js';
 
 export class MemoryHealthGraphRepo implements HealthGraphRepo {
-  private users = new Map<string, UserProfile>();
+  private users = new Map<string, UserProfile>(); // pseudonym → profile
+  private userIds = new Map<string, string>(); // users.id → pseudonym
   private patterns: Pattern[] = [];
   private bets: Bet[] = [];
   private confirmations: BetConfirmation[] = [];
@@ -25,12 +26,27 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
   private cycleEvents: { pseudonym: string; eventType: string; eventDate: string; source: string }[] = [];
   private lessons: { pseudonym: string; lessonKey: string; betId: string }[] = [];
 
-  async getUserProfile(pseudonym: string): Promise<UserProfile | null> {
-    return this.users.get(pseudonym) ?? null;
+  async createUser(input: {
+    lifeStage?: string | null;
+    hasDiagnosis?: boolean;
+  }): Promise<{ id: string; pseudonym: string }> {
+    const id = randomUUID();
+    const pseudonym = randomUUID();
+    this.users.set(pseudonym, {
+      pseudonym,
+      lifeStage: input.lifeStage ?? null,
+      hasDiagnosis: input.hasDiagnosis ?? false,
+    });
+    this.userIds.set(id, pseudonym);
+    return { id, pseudonym };
   }
 
-  async upsertUserProfile(profile: UserProfile): Promise<void> {
-    this.users.set(profile.pseudonym, profile);
+  async getPseudonymByUserId(userId: string): Promise<string | null> {
+    return this.userIds.get(userId) ?? null;
+  }
+
+  async getUserProfile(pseudonym: string): Promise<UserProfile | null> {
+    return this.users.get(pseudonym) ?? null;
   }
 
   async findPattern(
@@ -118,6 +134,11 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     return this.bets.find((b) => b.id === betId) ?? null;
   }
 
+  async getPendingBet(pseudonym: string): Promise<Bet | null> {
+    const pending = this.bets.filter((b) => b.pseudonym === pseudonym && b.result === null);
+    return pending.at(-1) ?? null;
+  }
+
   async listConfirmations(betId: string): Promise<BetConfirmation[]> {
     return this.confirmations.filter((c) => c.betId === betId);
   }
@@ -126,6 +147,7 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     betId: string;
     result: BetConfirmation['result'];
     corrected: boolean;
+    source: string;
   }): Promise<void> {
     this.confirmations.push({
       id: randomUUID(),
@@ -158,6 +180,13 @@ export class MemoryHealthGraphRepo implements HealthGraphRepo {
     source: string;
   }): Promise<void> {
     this.cycleEvents.push({ ...input });
+  }
+
+  async getLastPeriodStart(pseudonym: string): Promise<Date | null> {
+    const starts = this.cycleEvents
+      .filter((e) => e.pseudonym === pseudonym && e.eventType === 'period_start')
+      .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
+    return starts[0] ? new Date(`${starts[0].eventDate}T00:00:00.000Z`) : null;
   }
 
   async completeLesson(input: {

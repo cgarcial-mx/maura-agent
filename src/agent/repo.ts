@@ -4,7 +4,7 @@
  * Las tools del agente operan sobre esta interfaz (PRD §11.2): es el único camino de
  * escritura; el LLM nunca toca la DB directamente. Hay dos implementaciones:
  * - `MemoryHealthGraphRepo` (tests / arranque sin Postgres)
- * - `DrizzleHealthGraphRepo` (producción, se añade al conectar el server)
+ * - `DrizzleHealthGraphRepo` (producción)
  *
  * Invariantes del moat que toda implementación debe respetar:
  * - `bets` es append-only: los campos de lectura (reading_text, variable, direction,
@@ -63,9 +63,15 @@ export interface BetConfirmation {
 }
 
 export interface HealthGraphRepo {
+  // Capa identificable
+  createUser(input: {
+    lifeStage?: string | null;
+    hasDiagnosis?: boolean;
+  }): Promise<{ id: string; pseudonym: string }>;
+  getPseudonymByUserId(userId: string): Promise<string | null>;
   getUserProfile(pseudonym: string): Promise<UserProfile | null>;
-  upsertUserProfile(profile: UserProfile): Promise<void>;
 
+  // Patrones
   findPattern(
     pseudonym: string,
     variable: SignalType,
@@ -82,6 +88,7 @@ export interface HealthGraphRepo {
   }): Promise<Pattern>;
   updatePatternBelief(patternId: string, belief: number, status: PatternStatus): Promise<void>;
 
+  // Bets
   insertBet(input: {
     pseudonym: string;
     patternId: string | null;
@@ -95,14 +102,17 @@ export interface HealthGraphRepo {
     generator: Generator;
   }): Promise<Bet>;
   getBet(betId: string): Promise<Bet | null>;
+  getPendingBet(pseudonym: string): Promise<Bet | null>;
   listConfirmations(betId: string): Promise<BetConfirmation[]>;
   insertConfirmation(input: {
     betId: string;
     result: BetResult;
     corrected: boolean;
+    source: string;
   }): Promise<void>;
   updateBetResult(betId: string, result: BetResult, posterior: number): Promise<void>;
 
+  // Señales / ciclo / lecciones
   logSignal(input: {
     pseudonym: string;
     signalType: SignalType;
@@ -115,6 +125,7 @@ export interface HealthGraphRepo {
     eventDate: string;
     source: string;
   }): Promise<void>;
+  getLastPeriodStart(pseudonym: string): Promise<Date | null>;
   completeLesson(input: {
     pseudonym: string;
     lessonKey: string;

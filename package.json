@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Maura — plataforma agéntica de acompañamiento para salud hormonal femenina (MVP)",
   "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -15,6 +17,7 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
+    "fastify": "^5.12.4",
     "pg": "^8.23.0",
     "zod": "^4.6.2"
   },

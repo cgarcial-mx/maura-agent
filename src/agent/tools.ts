@@ -110,6 +110,7 @@ export async function proposeReading(
 export interface ConfirmReadingInput {
   betId: string;
   result: string;
+  source?: string;
 }
 
 export type ConfirmReadingResult =
@@ -132,11 +133,12 @@ export async function confirmReading(
   const bet = await repo.getBet(input.betId);
   if (!bet) return { ok: false, reason: 'bet_not_found' };
 
+  const source = input.source ?? 'web';
   const lessonKey = lessonKeyFor(bet.variable, bet.direction);
 
   // Primera confirmación.
   if (bet.result === null) {
-    return applyConfirmation(repo, bet, result, false, lessonKey);
+    return applyConfirmation(repo, bet, result, false, lessonKey, source);
   }
 
   // Idempotencia: misma respuesta → primera gana (AC6), no se registra de nuevo.
@@ -157,7 +159,7 @@ export async function confirmReading(
     return { ok: false, reason: 'already_corrected' };
   }
 
-  return applyConfirmation(repo, bet, result, true, lessonKey);
+  return applyConfirmation(repo, bet, result, true, lessonKey, source);
 }
 
 async function applyConfirmation(
@@ -166,12 +168,13 @@ async function applyConfirmation(
   result: BetResult,
   corrected: boolean,
   lessonKey: string,
+  source: string,
 ): Promise<ConfirmReadingResult> {
   const prior = Number(bet.beliefPrior);
   const posterior = bayesUpdate(prior, result);
   const status = deriveStatus(posterior);
 
-  await repo.insertConfirmation({ betId: bet.id, result, corrected });
+  await repo.insertConfirmation({ betId: bet.id, result, corrected, source });
   await repo.updateBetResult(bet.id, result, posterior);
   if (bet.patternId) {
     await repo.updatePatternBelief(bet.patternId, posterior, status);
